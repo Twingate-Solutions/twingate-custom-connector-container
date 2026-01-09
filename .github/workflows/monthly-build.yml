@@ -1,0 +1,158 @@
+name: Monthly image build, version tagging, and cleanup
+
+on:
+  schedule:
+    - cron: "0 3 1 * *"   # Monthly at 03:00 UTC
+  workflow_dispatch: {}
+
+env:
+  REGISTRY: ghcr.io
+  # How many tg-connector-* versions to keep in GHCR
+  KEEP_VERSIONS: 2
+
+jobs:
+  build-tag-clean:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: downcase REPO
+        run: |
+          echo "IMAGE_NAME_LC=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image locally
+        run: |
+          docker build -t tg-build-temp .
+
+      - name: Extract Twingate connector version (override entrypoint)
+        id: version
+        run: |
+          # Override entrypoint so entrypoint.sh (which needs a service key)
+          # does NOT run. Just execute "twingate-connector --version".
+          set +e
+          RAW_OUTPUT=$(docker run --rm --entrypoint sh tg-build-temp -lc "twingate-connector --version | head -n 1")
+          STATUS=$?
+          set -e
+
+          echo "RAW_OUTPUT (exit $STATUS): $RAW_OUTPUT"
+
+          if [ $STATUS -ne 0 ] || [ -z "$RAW_OUTPUT" ]; then
+            echo "WARNING: Failed to run 'twingate-connector --version' in the image."
+            echo "Falling back to 'unknown' connector version."
+            CONNECTOR_VER="unknown"
+          else
+            # Expected: "twingate 2025.310.174671 | 0.174.0"
+            CONNECTOR_VER=$(echo "$RAW_OUTPUT" | awk '{print $2}')
+            if [ -z "$CONNECTOR_VER" ]; then
+              CONNECTOR_VER="unknown"
+            fi
+          fi
+
+          echo "Parsed connector version: $CONNECTOR_VER"
+          echo "TG_CONNECTOR_VERSION=$CONNECTOR_VER" >> "$GITHUB_ENV"
+
+      - name: Tag image with latest and connector-version
+        run: |
+          FULL_IMAGE="${REGISTRY}/${IMAGE_NAME_LC}"
+          echo "Using connector version: ${TG_CONNECTOR_VERSION}"
+          echo "Full image name: $FULL_IMAGE"
+
+          docker tag tg-build-temp "$FULL_IMAGE:latest"
+          docker tag tg-build-temp "$FULL_IMAGE:tg-connector-${TG_CONNECTOR_VERSION}"
+          echo "Tagged:"
+          echo "  $FULL_IMAGE:latest"
+          echo "  $FULL_IMAGE:tg-connector-${TG_CONNECTOR_VERSION}"
+
+      - name: Push tags
+        run: |
+          FULL_IMAGE="${REGISTRY}/${IMAGE_NAME_LC}"
+          docker push "$FULL_IMAGE:latest"
+          docker push "$FULL_IMAGE:tg-connector-${TG_CONNECTOR_VERSION}"
+
+      - name: Install jq (for cleanup step)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Cleanup old tg-connector-* versions in GHCR
+        run: |
+          TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          OWNER_LC=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
+          PKG_NAME_LC=$(echo "${GITHUB_REPOSITORY##*/}" | tr '[:upper:]' '[:lower:]')
+
+          echo "Owner (lc): $OWNER_LC"
+          echo "Package (lc): $PKG_NAME_LC"
+
+          # Try org endpoint first, then user if org 404s
+          BASE_ORG="https://api.github.com/orgs/${OWNER_LC}/packages/container/${PKG_NAME_LC}"
+          BASE_USER="https://api.github.com/users/${OWNER_LC}/packages/container/${PKG_NAME_LC}"
+
+          echo "Trying org endpoint: $BASE_ORG/versions"
+          HTTP_STATUS=$(curl -s -o versions.json -w "%{http_code}" \
+            -H "Authorization: Bearer $TOKEN" \
+            "${BASE_ORG}/versions?per_page=100")
+
+          if [ "$HTTP_STATUS" -eq 404 ]; then
+            echo "Org endpoint not found, trying user endpoint: $BASE_USER/versions"
+            HTTP_STATUS=$(curl -s -o versions.json -w "%{http_code}" \
+              -H "Authorization: Bearer $TOKEN" \
+              "${BASE_USER}/versions?per_page=100")
+            BASE_URL="$BASE_USER"
+          else
+            BASE_URL="$BASE_ORG"
+          fi
+
+          echo "Versions API HTTP status: $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" -ge 400 ]; then
+            echo "Failed to fetch versions metadata. Skipping cleanup."
+            cat versions.json || true
+            exit 0
+          fi
+
+          echo "Raw versions JSON:"
+          cat versions.json
+
+          # Extract versions that have any tag starting with "tg-client-",
+          # sort by created_at descending (newest first)
+          # and delete all beyond KEEP_VERSIONS.
+          DELETE_IDS=$(jq -r --argjson keep "${KEEP_VERSIONS}" '
+            map({
+              id: .id,
+              created_at: .created_at,
+              tags: .metadata.container.tags
+            })
+            | map(select(.tags | any(startswith("tg-client-"))))
+            | sort_by(.created_at)
+            | reverse
+            | .[$keep:][]? .id
+          ' versions.json)
+
+          if [ -z "$DELETE_IDS" ]; then
+            echo "No old tg-client-* versions to delete."
+            exit 0
+          fi
+
+          echo "Version IDs to delete:"
+          echo "$DELETE_IDS"
+
+          for VID in $DELETE_IDS; do
+            echo "Deleting version ID $VID ..."
+            curl -s -X DELETE \
+              -H "Authorization: Bearer $TOKEN" \
+              "${BASE_URL}/versions/${VID}" \
+              -o /dev/null -w "HTTP %{http_code}\n"
+          done
