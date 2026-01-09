@@ -28,6 +28,11 @@ echo "deb [signed-by=${TWINGATE_GPG_PUBLIC_KEY}] https://packages.twingate.com/a
 apt update -yq
 apt install -yq twingate-connector
 
+log_with_timestamp "[entrypoint] Configuring Twingate connector..."
+
+mkdir -p "${CONFIG_DIR}"
+touch "${CONFIG}"
+
 if [ -n "${TWINGATE_NETWORK}" ]; then
   echo "TWINGATE_NETWORK=${TWINGATE_NETWORK}" >> "${CONFIG}"
 elif [ -n "${TWINGATE_URL}" ]; then
@@ -43,7 +48,6 @@ if [ -n "${TWINGATE_ACCESS_TOKEN}" ] && [ -n "${TWINGATE_REFRESH_TOKEN}" ]; then
         echo "TWINGATE_LOG_ANALYTICS=${TWINGATE_LOG_ANALYTICS}" >> "${CONFIG}"
     fi
     chmod 0600 "$CONFIG"
-    systemctl enable --now twingate-connector
 fi
 
 echo "TWINGATE_LABEL_DEPLOYED_BY=custom_docker_connector_v1" | sudo tee -a /etc/twingate/connector.conf
@@ -60,10 +64,6 @@ else
   echo "TWINGATE_LOG_LEVEL=$TWINGATE_LOG_LEVEL" | sudo tee -a /etc/twingate/connector.conf
 fi
 
-log_with_timestamp "[entrypoint] Starting Twingate connector container..."
-exec twingate-connector
-
-log_with_timestamp "[entrypoint] Twingate started. Keeping container running."
 log_with_timestamp "[entrypoint] Forwarding Twingate log to stdout..."
 
 # Filter common syslog files for twingate-related entries and forward them to stdout
@@ -76,5 +76,12 @@ if [ -e "$s" ]; then
 fi
 done
 
-# Keep container alive; twingate runs as a daemon
-sleep infinity
+# If arguments were provided, run them after install+config and exit.
+# This enables: docker run IMAGE sh -lc 'twingate-connector --version'
+if [ "$#" -gt 0 ]; then
+  log_with_timestamp "[entrypoint] Running command: $*"
+  exec "$@"
+fi
+
+log_with_timestamp "[entrypoint] Starting Twingate connector container..."
+exec twingate-connector
