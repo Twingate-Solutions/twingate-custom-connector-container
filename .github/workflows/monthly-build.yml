@@ -37,14 +37,28 @@ jobs:
         run: |
           docker build -t tg-build-temp .
 
-      - name: Extract Twingate connector version (override entrypoint)
+      - name: Extract Twingate connector version (entrypoint with static env variables)
         id: version
         run: |
-          # Override entrypoint so entrypoint.sh (which needs a service key)
-          # does NOT run. Just execute "twingate-connector --version".
+          # Run entrypoint but override env vars to prevent actual connector startup;
+          # we just want to get the version info.
           set +e
-          RAW_OUTPUT=$(docker run --rm --entrypoint sh tg-build-temp -lc "twingate-connector --version | head -n 1")
-          STATUS=$?
+
+          IMAGE="tg-build-temp"
+          CTR_NAME="tg-build-temp-ver"
+
+          # Clean up any prior container with the same name (in case a previous run failed)
+          docker rm -f "$CTR_NAME" >/dev/null 2>&1 || true
+
+          # Start a container with a fixed name and the placeholder env vars.
+          # Use a harmless command so it stays alive long enough for docker exec.
+          RAW_OUTPUT="$(docker run --rm \
+            --env TWINGATE_NETWORK="NETWORK_PLACEHOLDER" \
+            --env TWINGATE_ACCESS_TOKEN="ACCESS_TOKEN_PLACEHOLDER" \
+            --env TWINGATE_REFRESH_TOKEN="PLACEHOLDER" \
+            "$IMAGE" \
+            sh -lc 'twingate-connector --version | head -n 1')"
+
           set -e
 
           echo "RAW_OUTPUT (exit $STATUS): $RAW_OUTPUT"
@@ -55,10 +69,8 @@ jobs:
             CONNECTOR_VER="unknown"
           else
             # Expected: "twingate 2025.310.174671 | 0.174.0"
-            CONNECTOR_VER=$(echo "$RAW_OUTPUT" | awk '{print $2}')
-            if [ -z "$CONNECTOR_VER" ]; then
-              CONNECTOR_VER="unknown"
-            fi
+            CONNECTOR_VER="$(echo "$RAW_OUTPUT" | awk '{print $2}')"
+            [ -n "$CONNECTOR_VER" ] || CONNECTOR_VER="unknown"
           fi
 
           echo "Parsed connector version: $CONNECTOR_VER"
