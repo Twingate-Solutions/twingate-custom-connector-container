@@ -45,36 +45,39 @@ jobs:
           set +e
 
           IMAGE="tg-build-temp"
-          CTR_NAME="tg-build-temp-ver"
 
-          # Clean up any prior container with the same name (in case a previous run failed)
-          docker rm -f "$CTR_NAME" >/dev/null 2>&1 || true
-
-          # Start a container with a fixed name and the placeholder env vars.
-          # Use a harmless command so it stays alive long enough for docker exec.
-          RAW_OUTPUT="$(docker run --rm \
-            --env TWINGATE_NETWORK="NETWORK_PLACEHOLDER" \
-            --env TWINGATE_ACCESS_TOKEN="ACCESS_TOKEN_PLACEHOLDER" \
-            --env TWINGATE_REFRESH_TOKEN="PLACEHOLDER" \
-            "$IMAGE" \
-            sh -lc 'twingate-connector --version | head -n 1')"
+          # Capture output and status from docker run
+          RAW_OUTPUT="$(
+            docker run --rm \
+              --env TWINGATE_NETWORK="NETWORK_PLACEHOLDER" \
+              --env TWINGATE_ACCESS_TOKEN="ACCESS_TOKEN_PLACEHOLDER" \
+              --env TWINGATE_REFRESH_TOKEN="PLACEHOLDER" \
+              --entrypoint sh \
+              "$IMAGE" -lc 'twingate-connector --version 2>/dev/null | head -n 1'
+          )"
+          STATUS=$?
 
           set -e
 
+          # Normalize to one line (defensive)
+          RAW_OUTPUT="$(printf '%s' "$RAW_OUTPUT" | tr -d '\r' | head -n 1)"
+
           echo "RAW_OUTPUT (exit $STATUS): $RAW_OUTPUT"
 
-          if [ $STATUS -ne 0 ] || [ -z "$RAW_OUTPUT" ]; then
+          if [ "$STATUS" -ne 0 ] || [ -z "$RAW_OUTPUT" ]; then
             echo "WARNING: Failed to run 'twingate-connector --version' in the image."
-            echo "Falling back to 'unknown' connector version."
             CONNECTOR_VER="unknown"
           else
-            # Expected: "twingate 2025.310.174671 | 0.174.0"
-            CONNECTOR_VER="$(echo "$RAW_OUTPUT" | awk '{print $2}')"
+            # If logs still leak in, only keep a line that contains "twingate" and a digit
+            # (adjust pattern if your output differs)
+            RAW_OUTPUT="$(printf '%s\n' "$RAW_OUTPUT" | grep -E 'twingate.*[0-9]' | head -n 1 || true)"
+
+            CONNECTOR_VER="$(printf '%s' "$RAW_OUTPUT" | awk '{print $2}')"
             [ -n "$CONNECTOR_VER" ] || CONNECTOR_VER="unknown"
           fi
 
           echo "Parsed connector version: $CONNECTOR_VER"
-          echo "TG_CONNECTOR_VERSION=$CONNECTOR_VER" >> "$GITHUB_ENV"
+          printf 'TG_CONNECTOR_VERSION=%s\n' "$CONNECTOR_VER" >> "$GITHUB_ENV"
 
       - name: Tag image with latest and connector-version
         run: |
