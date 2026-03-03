@@ -68,11 +68,9 @@ jobs:
             echo "WARNING: Failed to run 'twingate-connector --version' in the image."
             CONNECTOR_VER="unknown"
           else
-            # If logs still leak in, only keep a line that contains "twingate" and a digit
-            # (adjust pattern if your output differs)
-            RAW_OUTPUT="$(printf '%s\n' "$RAW_OUTPUT" | grep -E 'twingate.*[0-9]' | head -n 1 || true)"
-
-            CONNECTOR_VER="$(printf '%s' "$RAW_OUTPUT" | awk '{print $2}')"
+            # Output may be bare ("1.85.0") or prefixed ("twingate-connector 1.85.0").
+            # $NF picks the last whitespace-delimited field, covering both formats.
+            CONNECTOR_VER="$(printf '%s' "$RAW_OUTPUT" | awk '{print $NF}')"
             [ -n "$CONNECTOR_VER" ] || CONNECTOR_VER="unknown"
           fi
 
@@ -91,16 +89,60 @@ jobs:
           echo "  $FULL_IMAGE:latest"
           echo "  $FULL_IMAGE:tg-connector-${TG_CONNECTOR_VERSION}"
 
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Delete existing tg-connector-{version} package if already present
+        run: |
+          TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          OWNER_LC=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
+          PKG_NAME_LC=$(echo "${GITHUB_REPOSITORY##*/}" | tr '[:upper:]' '[:lower:]')
+          TARGET_TAG="tg-connector-${TG_CONNECTOR_VERSION}"
+
+          echo "Checking for existing package version with tag: $TARGET_TAG"
+
+          BASE_ORG="https://api.github.com/orgs/${OWNER_LC}/packages/container/${PKG_NAME_LC}"
+          BASE_USER="https://api.github.com/users/${OWNER_LC}/packages/container/${PKG_NAME_LC}"
+
+          HTTP_STATUS=$(curl -s -o versions.json -w "%{http_code}" \
+            -H "Authorization: Bearer $TOKEN" \
+            "${BASE_ORG}/versions?per_page=100")
+
+          if [ "$HTTP_STATUS" -eq 404 ]; then
+            HTTP_STATUS=$(curl -s -o versions.json -w "%{http_code}" \
+              -H "Authorization: Bearer $TOKEN" \
+              "${BASE_USER}/versions?per_page=100")
+            BASE_URL="$BASE_USER"
+          else
+            BASE_URL="$BASE_ORG"
+          fi
+
+          if [ "$HTTP_STATUS" -ge 400 ]; then
+            echo "Could not fetch versions (HTTP $HTTP_STATUS). Skipping pre-push dedup."
+            exit 0
+          fi
+
+          EXISTING_ID=$(jq -r --arg tag "$TARGET_TAG" '
+            .[] | select(.metadata.container.tags | any(. == $tag)) | .id
+          ' versions.json)
+
+          if [ -z "$EXISTING_ID" ]; then
+            echo "No existing version found with tag $TARGET_TAG. Nothing to delete."
+          else
+            echo "Found existing version ID $EXISTING_ID with tag $TARGET_TAG. Deleting before re-push..."
+            curl -s -X DELETE \
+              -H "Authorization: Bearer $TOKEN" \
+              "${BASE_URL}/versions/${EXISTING_ID}" \
+              -o /dev/null -w "HTTP %{http_code}\n"
+          fi
+
       - name: Push tags
         run: |
           FULL_IMAGE="${REGISTRY}/${IMAGE_NAME_LC}"
           docker push "$FULL_IMAGE:latest"
           docker push "$FULL_IMAGE:tg-connector-${TG_CONNECTOR_VERSION}"
-
-      - name: Install jq (for cleanup step)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
 
       - name: Cleanup old tg-connector-* versions in GHCR
         run: |
