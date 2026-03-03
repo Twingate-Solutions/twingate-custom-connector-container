@@ -7,8 +7,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # How many tg-connector-* versions to keep in GHCR
-  KEEP_VERSIONS: 2
+  # Total image versions to keep in GHCR (current build + this many prior builds)
+  KEEP_VERSIONS: 3
 
 jobs:
   build-tag-clean:
@@ -144,7 +144,7 @@ jobs:
           docker push "$FULL_IMAGE:latest"
           docker push "$FULL_IMAGE:tg-connector-${TG_CONNECTOR_VERSION}"
 
-      - name: Cleanup old tg-connector-* versions in GHCR
+      - name: Cleanup old image versions in GHCR
         run: |
           TOKEN="${{ secrets.GITHUB_TOKEN }}"
           OWNER_LC=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
@@ -183,16 +183,14 @@ jobs:
           echo "Raw versions JSON:"
           cat versions.json
 
-          # Extract versions that have any tag starting with "tg-connector-",
-          # sort by created_at descending (newest first)
-          # and delete all beyond KEEP_VERSIONS.
+          # Sort ALL versions by created_at descending (newest first) and delete
+          # everything beyond KEEP_VERSIONS (current build + prior builds).
           DELETE_IDS=$(jq -r --argjson keep "${KEEP_VERSIONS}" '
             map({
               id: .id,
               created_at: .created_at,
               tags: .metadata.container.tags
             })
-            | map(select(.tags | any(startswith("tg-connector-"))))
             | sort_by(.created_at)
             | reverse
             | .[$keep:][]? .id
