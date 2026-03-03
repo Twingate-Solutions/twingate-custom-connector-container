@@ -5,83 +5,59 @@ CONFIG="/etc/twingate/connector.conf"
 CONFIG_DIR=$(dirname "$CONFIG")
 
 log_with_timestamp() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $@"
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
 }
 
 log_with_timestamp "[entrypoint] Starting entrypoint script..."
-log_with_timestamp "[entrypoint] Installing Twingate connector..."
 
 : "${TWINGATE_ACCESS_TOKEN:?required}"
 : "${TWINGATE_REFRESH_TOKEN:?required}"
 : "${TWINGATE_NETWORK:?required}"
 
-# Install the Twingate Connector
-apt update -yq
-apt_require_curl
-apt_require_gpg
-TWINGATE_GPG_PUBLIC_KEY=/usr/share/keyrings/twingate-connector-keyring.gpg
-if ! curl -fsSL "https://packages.twingate.com/apt/gpg.key" | gpg --dearmor -o "$TWINGATE_GPG_PUBLIC_KEY"; then
-    echo "Failed to download or process GPG key"
-    exit 1
-fi
-echo "deb [signed-by=${TWINGATE_GPG_PUBLIC_KEY}] https://packages.twingate.com/apt/ /" | tee /etc/apt/sources.list.d/twingate.list
-apt update -yq
-apt install -yq twingate-connector
-
 log_with_timestamp "[entrypoint] Configuring Twingate connector..."
 
 mkdir -p "${CONFIG_DIR}"
-touch "${CONFIG}"
 
-if [ -n "${TWINGATE_NETWORK}" ]; then
-  echo "TWINGATE_NETWORK=${TWINGATE_NETWORK}" >> "${CONFIG}"
-elif [ -n "${TWINGATE_URL}" ]; then
-  echo "TWINGATE_URL=${TWINGATE_URL}" >> "${CONFIG}"
-fi
+{
+  echo "TWINGATE_NETWORK=${TWINGATE_NETWORK}"
+  echo "TWINGATE_ACCESS_TOKEN=${TWINGATE_ACCESS_TOKEN}"
+  echo "TWINGATE_REFRESH_TOKEN=${TWINGATE_REFRESH_TOKEN}"
+  echo "TWINGATE_LABEL_DEPLOYED_BY=custom_docker_connector_v1"
+  if [ -n "${TWINGATE_LOG_ANALYTICS:-}" ]; then
+    echo "TWINGATE_LOG_ANALYTICS=${TWINGATE_LOG_ANALYTICS}"
+  fi
+  if [ -n "${TWINGATE_LOG_LEVEL:-}" ]; then
+    echo "TWINGATE_LOG_LEVEL=${TWINGATE_LOG_LEVEL}"
+  fi
+} > "${CONFIG}"
 
-if [ -n "${TWINGATE_ACCESS_TOKEN}" ] && [ -n "${TWINGATE_REFRESH_TOKEN}" ]; then
-    { \
-        echo "TWINGATE_ACCESS_TOKEN=${TWINGATE_ACCESS_TOKEN}"; \
-        echo "TWINGATE_REFRESH_TOKEN=${TWINGATE_REFRESH_TOKEN}"; \
-    } >> "${CONFIG}"
-    if [ -n "${TWINGATE_LOG_ANALYTICS}" ]; then
-        echo "TWINGATE_LOG_ANALYTICS=${TWINGATE_LOG_ANALYTICS}" >> "${CONFIG}"
-    fi
-    chmod 0600 "$CONFIG"
-fi
+chmod 0600 "${CONFIG}"
 
-echo "TWINGATE_LABEL_DEPLOYED_BY=custom_docker_connector_v1" | sudo tee -a /etc/twingate/connector.conf
+log_with_timestamp "[entrypoint] Forwarding Twingate logs to stdout..."
 
-if [ "$TWINGATE_LOG_ANALYTICS" ]; then
-  echo "Enabling detailed traffic logging"
-  echo "TWINGATE_LOG_ANALYTICS=$TWINGATE_LOG_ANALYTICS" | sudo tee -a /etc/twingate/connector.conf
-fi
-
-if [ "$TWINGATE_LOG_LEVEL" == "7" ]; then
-  echo "Setting log level to $TWINGATE_LOG_LEVEL"
-  echo "TWINGATE_LOG_LEVEL=7" | sudo tee -a /etc/twingate/connector.conf
-else
-  echo "TWINGATE_LOG_LEVEL=$TWINGATE_LOG_LEVEL" | sudo tee -a /etc/twingate/connector.conf
-fi
-
-log_with_timestamp "[entrypoint] Forwarding Twingate log to stdout..."
-
-# Filter common syslog files for twingate-related entries and forward them to stdout
+# Best-effort: if a syslog file exists, tail twingate entries from it in the background.
+# If the connector logs to stdout natively this will be a no-op.
 SYSLOG_CANDIDATES=("/var/log/syslog" "/var/log/messages" "/var/log/daemon.log")
 for s in "${SYSLOG_CANDIDATES[@]}"; do
-if [ -e "$s" ]; then
+  if [ -e "$s" ]; then
     log_with_timestamp "[entrypoint] Forwarding twingate entries from $s to stdout..."
     tail -F "$s" | grep --line-buffered -E "twingate|twingated|twingate-connector" &
     break
-fi
+  fi
 done
 
-# If arguments were provided, run them after install+config and exit.
+# If arguments were provided, run them after config and exit.
 # This enables: docker run IMAGE sh -lc 'twingate-connector --version'
 if [ "$#" -gt 0 ]; then
   log_with_timestamp "[entrypoint] Running command: $*"
   exec "$@"
 fi
 
-log_with_timestamp "[entrypoint] Starting Twingate connector container..."
+log_with_timestamp "[entrypoint] Starting Twingate connector..."
+
+# systemd normally creates this via RuntimeDirectory=twingate and sets TWINGATE_API_ENDPOINT.
+# Without systemd we do it ourselves so twingate-connectorctl can reach the running connector.
+mkdir -p /run/twingate
+export TWINGATE_API_ENDPOINT=/run/twingate/connector.sock
+
 exec twingate-connector

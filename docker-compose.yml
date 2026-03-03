@@ -1,10 +1,10 @@
 services:
   tg-headless-connector:
-    image: ghcr.io/twingate-connector/twingate-custom-connector-container:latest  
+    image: ghcr.io/twingate-solutions/twingate-custom-connector-container:latest
     privileged: true
 
     environment:
-      - TWINGATE_HOSTNAME=<YOUR_TWINGATE_HOSTNAME>
+      - TWINGATE_NETWORK=<YOUR_TWINGATE_NETWORK>
       - TWINGATE_ACCESS_TOKEN=<ACCESS_TOKEN>
       - TWINGATE_REFRESH_TOKEN=<REFRESH_TOKEN>
       #- TWINGATE_LOG_ANALYTICS=v2 #remove the comment tag on this if you want detailed traffic logging

@@ -20,7 +20,7 @@ Scroll down to **Step 2** and click **Generate Tokens**. This will produce an **
 
 This is an example `docker-compose.yml` file to get you started. Replace the placeholder values with your own. The three required environment variables are:
 
-- `TWINGATE_HOSTNAME`: Your Twingate network hostname (e.g. from the Admin Console subdomain `mycompany.twingate.com` just the `mycompany` part)
+- `TWINGATE_NETWORK`: Your Twingate network name (e.g. from the Admin Console subdomain `mycompany.twingate.com` just the `mycompany` part)
 - `TWINGATE_ACCESS_TOKEN`: The Access Token generated in Step 1
 - `TWINGATE_REFRESH_TOKEN`: The Refresh Token generated in Step 1
 
@@ -36,7 +36,7 @@ services:
     privileged: true
 
     environment:
-      - TWINGATE_HOSTNAME=<YOUR_TWINGATE_HOSTNAME>
+      - TWINGATE_NETWORK=<YOUR_TWINGATE_NETWORK>
       - TWINGATE_ACCESS_TOKEN=<ACCESS_TOKEN>
       - TWINGATE_REFRESH_TOKEN=<REFRESH_TOKEN>
       #- TWINGATE_LOG_ANALYTICS=v2 #remove the comment tag on this if you want detailed traffic logging

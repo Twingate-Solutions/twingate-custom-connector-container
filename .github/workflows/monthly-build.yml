@@ -141,7 +141,7 @@ jobs:
           echo "Raw versions JSON:"
           cat versions.json
 
-          # Extract versions that have any tag starting with "tg-client-",
+          # Extract versions that have any tag starting with "tg-connector-",
           # sort by created_at descending (newest first)
           # and delete all beyond KEEP_VERSIONS.
           DELETE_IDS=$(jq -r --argjson keep "${KEEP_VERSIONS}" '
@@ -150,14 +150,14 @@ jobs:
               created_at: .created_at,
               tags: .metadata.container.tags
             })
-            | map(select(.tags | any(startswith("tg-client-"))))
+            | map(select(.tags | any(startswith("tg-connector-"))))
             | sort_by(.created_at)
             | reverse
             | .[$keep:][]? .id
           ' versions.json)
 
           if [ -z "$DELETE_IDS" ]; then
-            echo "No old tg-client-* versions to delete."
+            echo "No old tg-connector-* versions to delete."
             exit 0
           fi
 
