@@ -25,12 +25,11 @@ HEALTHCHECK --interval=90s --timeout=45s \
   CMD /usr/local/bin/healthchecks.sh || exit 1
 
 # Entrypoint
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-COPY healthchecks.sh /usr/local/bin/healthchecks.sh
+COPY entrypoint.sh healthchecks.sh emit-metrics.sh /usr/local/bin/
 COPY healthchecks.d/ /healthchecks.d/
-RUN sed -i 's/\r//' /usr/local/bin/entrypoint.sh /usr/local/bin/healthchecks.sh \
+RUN sed -i 's/\r//' /usr/local/bin/entrypoint.sh /usr/local/bin/healthchecks.sh /usr/local/bin/emit-metrics.sh \
     && find /healthchecks.d -type f -name '*.sh' -exec sed -i 's/\r//' {} \; \
-    && chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/healthchecks.sh \
+    && chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/healthchecks.sh /usr/local/bin/emit-metrics.sh \
     && find /healthchecks.d -type f -name '*.sh' -exec chmod +x {} \;
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

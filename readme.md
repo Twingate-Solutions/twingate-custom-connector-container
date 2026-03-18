@@ -81,6 +81,14 @@ Any additional checks can be added by placing executable scripts in `/healthchec
 
 ---
 
+## Metrics and Observability
+
+The container emits structured resource metrics (CPU, memory, network I/O) to stdout every 60 seconds as a JSON log line. These are automatically picked up by any log aggregation tool collecting the container's stdout — no sidecar or additional agent is required.
+
+See [docs/metrics.md](docs/metrics.md) for the full field schema and platform-specific guidance for CloudWatch Logs, Azure Log Analytics, and Datadog.
+
+---
+
 ## Forking and Customization
 
 This repository hosts a small Connector container and helper scripts. If you fork it you can:

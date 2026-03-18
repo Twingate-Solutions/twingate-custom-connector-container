@@ -40,6 +40,9 @@ if [ "$#" -gt 0 ]; then
   exec "$@"
 fi
 
+log_with_timestamp "[entrypoint] Starting metrics emitter..."
+/usr/local/bin/emit-metrics.sh &
+
 log_with_timestamp "[entrypoint] Starting Twingate connector..."
 
 # systemd normally creates this via RuntimeDirectory=twingate and sets TWINGATE_API_ENDPOINT.
