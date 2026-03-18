@@ -1,0 +1,8 @@
+.git
+.github
+.claude
+.gitignore
+.gitattributes
+docker-compose.yml
+*.md
+LICENSE

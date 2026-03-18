@@ -33,19 +33,6 @@ mkdir -p "${CONFIG_DIR}"
 
 chmod 0600 "${CONFIG}"
 
-log_with_timestamp "[entrypoint] Forwarding Twingate logs to stdout..."
-
-# Best-effort: if a syslog file exists, tail twingate entries from it in the background.
-# If the connector logs to stdout natively this will be a no-op.
-SYSLOG_CANDIDATES=("/var/log/syslog" "/var/log/messages" "/var/log/daemon.log")
-for s in "${SYSLOG_CANDIDATES[@]}"; do
-  if [ -e "$s" ]; then
-    log_with_timestamp "[entrypoint] Forwarding twingate entries from $s to stdout..."
-    tail -F "$s" | grep --line-buffered -E "twingate|twingated|twingate-connector" &
-    break
-  fi
-done
-
 # If arguments were provided, run them after config and exit.
 # This enables: docker run IMAGE sh -lc 'twingate-connector --version'
 if [ "$#" -gt 0 ]; then

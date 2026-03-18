@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Mirror all output to PID 1's stdout so healthcheck messages appear in docker logs.
+# Docker captures healthcheck subprocess output separately (visible via docker inspect),
+# but does not forward it to the container log. Writing to /proc/1/fd/1 bridges the gap.
+# tee passes output through to its own stdout (Docker's capture) AND writes to /proc/1/fd/1.
+# The 2>/dev/null on tee is best-effort: if /proc/1/fd/1 is unavailable, output still
+# reaches Docker's health capture and the exit code is still recorded correctly.
+exec 1> >(tee /proc/1/fd/1 2>/dev/null) 2>&1
+
 FAILED=0
 
 log_with_timestamp() {

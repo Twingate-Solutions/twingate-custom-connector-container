@@ -1,5 +1,5 @@
 # Dockerfile
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:f06537653ac770703bc45b4b113475bd402f451e85223f0f2837acbf89ab020a
 
 # Install runtime dependencies and Twingate connector at build time
 RUN apt-get update \
@@ -21,7 +21,7 @@ RUN apt-get update \
 
 ENV TERM=xterm-256color
 
-HEALTHCHECK --interval=90s --timeout=30s \
+HEALTHCHECK --interval=90s --timeout=45s \
   CMD /usr/local/bin/healthchecks.sh || exit 1
 
 # Entrypoint

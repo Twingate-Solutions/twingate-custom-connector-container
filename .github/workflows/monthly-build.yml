@@ -95,8 +95,9 @@ jobs:
           sudo apt-get install -y jq
 
       - name: Delete existing tg-connector-{version} package if already present
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TOKEN="${{ secrets.GITHUB_TOKEN }}"
           OWNER_LC=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
           PKG_NAME_LC=$(echo "${GITHUB_REPOSITORY##*/}" | tr '[:upper:]' '[:lower:]')
           TARGET_TAG="tg-connector-${TG_CONNECTOR_VERSION}"
@@ -145,8 +146,9 @@ jobs:
           docker push "$FULL_IMAGE:tg-connector-${TG_CONNECTOR_VERSION}"
 
       - name: Cleanup old image versions in GHCR
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TOKEN="${{ secrets.GITHUB_TOKEN }}"
           OWNER_LC=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
           PKG_NAME_LC=$(echo "${GITHUB_REPOSITORY##*/}" | tr '[:upper:]' '[:lower:]')
 
