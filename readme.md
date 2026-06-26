@@ -83,9 +83,9 @@ Any additional checks can be added by placing executable scripts in `/healthchec
 
 ## Metrics and Observability
 
-The container emits structured resource metrics (CPU, memory, network I/O) to stdout every 60 seconds as a JSON log line. These are automatically picked up by any log aggregation tool collecting the container's stdout — no sidecar or additional agent is required.
+The container emits structured resource metrics (CPU, memory, network I/O) every 60 seconds as a JSON log line. These are automatically picked up by any log aggregation tool collecting the container's logs — no sidecar or additional agent is required.
 
-See [docs/metrics.md](docs/metrics.md) for the full field schema and platform-specific guidance for CloudWatch Logs, Azure Log Analytics, and Datadog.
+Metrics are written to **stderr**, while the connector's own output (including `ANALYTICS` lines) goes to **stdout**. This is deliberate: it keeps the two writers on separate Docker streams so a metrics line can never interleave into — and corrupt — a large analytics line. Standard log drivers and aggregators (`docker logs`, `awslogs`, journald, Vector, Datadog, etc.) capture both streams, so metrics still flow to your aggregator unchanged. Filter them by the `"event":"metrics"` field, **not** by stream. See [docs/metrics.md](docs/metrics.md) for details, the full field schema, and platform-specific guidance.
 
 ---
 

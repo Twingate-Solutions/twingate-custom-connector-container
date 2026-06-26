@@ -41,7 +41,14 @@ if [ "$#" -gt 0 ]; then
 fi
 
 log_with_timestamp "[entrypoint] Starting metrics emitter..."
-/usr/local/bin/emit-metrics.sh &
+# Metrics are emitted on stderr, not stdout. The connector writes large (>4 KB)
+# ANALYTICS lines to stdout; writes that big are not atomic on a pipe (Linux only
+# guarantees atomicity up to PIPE_BUF, 4096 bytes). A concurrent metrics write on
+# the same stdout fd can splice into the middle of an in-flight analytics line and
+# corrupt both records. Routing metrics to stderr puts them on a separate Docker
+# stream that cannot byte-interleave with stdout. Log drivers/aggregators still
+# capture both streams; consumers filter metrics by the "event":"metrics" field.
+/usr/local/bin/emit-metrics.sh >&2 &
 
 log_with_timestamp "[entrypoint] Starting Twingate connector..."
 

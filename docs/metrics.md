@@ -1,8 +1,24 @@
 # Container Metrics
 
-The container includes a built-in metrics emitter (`emit-metrics.sh`) that periodically samples CPU usage, memory consumption, and network I/O from the Linux kernel's cgroup filesystem and writes a structured JSON line to stdout every 60 seconds.
+The container includes a built-in metrics emitter (`emit-metrics.sh`) that periodically samples CPU usage, memory consumption, and network I/O from the Linux kernel's cgroup filesystem and writes a structured JSON line to **stderr** every 60 seconds.
 
-Because all output is written to stdout, any log aggregation tool already collecting the container's log stream — Datadog, CloudWatch Logs, Azure Monitor, Splunk, etc. — will automatically receive these metrics with no additional sidecar or agent required.
+Any log aggregation tool already collecting the container's logs — Datadog, CloudWatch Logs, Azure Monitor, Splunk, Vector, etc. — will automatically receive these metrics with no additional sidecar or agent required. Standard log drivers capture both stdout and stderr.
+
+---
+
+## Output Stream: Why stderr
+
+Metrics are written to **stderr**, while the Twingate connector's own output — including large `ANALYTICS` lines — is written to **stdout**.
+
+This separation is intentional. The connector emits `ANALYTICS` lines that routinely exceed 4 KB, and Linux only guarantees that writes to a pipe (which is how Docker captures container output) are atomic up to `PIPE_BUF` (4096 bytes). A larger write can be split, and a concurrent write from a *different* process sharing the same file descriptor can land in the gap. If metrics shared the connector's stdout fd, a 60-second metrics line could splice into the middle of an in-flight analytics line and corrupt both records. Putting metrics on a separate stream (stderr) makes byte-interleaving impossible, because stdout and stderr are distinct descriptors that Docker frames independently.
+
+**What this means for consumers:**
+
+- **No data is lost.** `docker logs`, the `awslogs`/`json-file`/journald drivers, Vector's `docker_logs` source, the Datadog Agent, and equivalents all capture **both** streams by default. Metrics still arrive at your aggregator exactly as before.
+- **Filter by content, not stream.** Always isolate metrics with the `"event":"metrics"` field (or the `[metrics]` tag), which is identical regardless of stream. Do not filter on `stream == "stdout"`.
+- **Two caveats if you previously keyed off the stream:**
+  - Each metrics line now carries `stream: "stderr"` metadata. Any pipeline that *routes* on the stream field will see metrics on the stderr branch.
+  - Some platforms (e.g. Datadog's Docker integration) infer `error` severity from stderr by default. If metrics appear flagged as errors, remap their status using the `"event":"metrics"` field in your log pipeline.
 
 ---
 

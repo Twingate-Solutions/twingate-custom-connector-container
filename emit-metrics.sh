@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# emit-metrics.sh — Emits container resource metrics as a JSON line to stdout
-# every INTERVAL seconds. Tagged with event="metrics" for filtering in log
+# emit-metrics.sh — Emits container resource metrics as a JSON line every
+# INTERVAL seconds. Tagged with event="metrics" for filtering in log
 # aggregators (CloudWatch Logs, Datadog, etc.).
+#
+# Output goes to stderr, NOT stdout. entrypoint.sh launches this script with its
+# stdout redirected to stderr (`emit-metrics.sh >&2 &`) so metrics share a
+# different Docker stream than the connector's stdout. This prevents a metrics
+# line from byte-splicing into the middle of a large (>PIPE_BUF) ANALYTICS line.
+# If you run this script standalone, redirect its stdout yourself to match.
 #
 # Supports cgroup v1 and v2 — version is auto-detected at startup.
 # CPU %:    fraction of a single core; may exceed 100% on multi-core hosts with no CPU limit.

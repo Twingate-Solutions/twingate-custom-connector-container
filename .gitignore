@@ -183,3 +183,4 @@ cython_debug/
 # Claude Code
 #  Session data, memory files, and local AI assistant context — not for version control
 .claude/
+./docs/upstream*
