@@ -20,7 +20,7 @@ Scroll down to **Step 2** and click **Generate Tokens**. This will produce an **
 
 This is an example `docker-compose.yml` file to get you started. Replace the placeholder values with your own. The three required environment variables are:
 
-- `TWINGATE_NETWORK`: Your Twingate network name (e.g. from the Admin Console subdomain `mycompany.twingate.com` just the `mycompany` part)
+- `TWINGATE_NETWORK`: Your Twingate network name — the part of your Admin Console URL before `.twingate.com`. Copy it from the console rather than assuming a single label: for `mycompany.twingate.com` it is `mycompany`, and for a shard-based URL like `mycompany.us1.twingate.com` it is `mycompany.us1`.
 - `TWINGATE_ACCESS_TOKEN`: The Access Token generated in Step 1
 - `TWINGATE_REFRESH_TOKEN`: The Refresh Token generated in Step 1
 
